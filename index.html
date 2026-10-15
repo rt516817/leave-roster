@@ -1,0 +1,196 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#1e3a5f"><link rel="manifest" href="manifest.webmanifest"><title>團隊休假與排班</title><style>
+:root{font-family:system-ui,'Noto Sans TC',sans-serif;color:#1e293b;background:#f1f5f9}*{box-sizing:border-box}body{margin:0}header{background:#17375e;color:white;padding:17px 22px;display:flex;gap:15px;align-items:center;justify-content:space-between}h1{font-size:22px;margin:0}h2{font-size:18px}h3{font-size:15px}main{max-width:1150px;margin:auto;padding:20px}.card{background:white;border-radius:14px;padding:20px;margin:14px 0;box-shadow:0 2px 10px #1a2a4410}.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.spread{justify-content:space-between}.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}.day{border:1px solid #dce4ef;border-radius:9px;padding:8px;min-height:92px;background:#fafcff;overflow-wrap:anywhere}.day.today{border:2px solid #3274bf}.day.off{background:#fef2f2}.small{font-size:12px;color:#64748b}.name{font-size:12px;background:#e0e7ff;border-radius:4px;padding:2px 4px;margin:3px 0;display:block}.pending{background:#fef3c7}.approved{background:#dcfce7}.rejected{background:#fee2e2}.muted{color:#64748b}button,input,select{font:inherit}input,select{padding:9px;border:1px solid #ccd5e1;border-radius:8px;max-width:100%}button{cursor:pointer;border:0;border-radius:8px;background:#2563eb;color:white;padding:10px 14px}button.secondary{background:#e5eaf1;color:#334155}button.danger{background:#b91c1c}button:disabled{opacity:.45;cursor:not-allowed}label{font-size:14px;display:grid;gap:5px}nav{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0}nav button{background:#dce7f5;color:#1e3a5f}nav button.active{background:#1d4ed8;color:white}.hidden{display:none!important}.scroll{overflow:auto}table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid #e2e8f0;padding:8px;text-align:center}th{background:#eaf1fa}td:first-child{white-space:nowrap;font-weight:600;text-align:left}.pill{padding:3px 7px;border-radius:7px;font-size:12px;display:inline-block}.notice{padding:10px;border-radius:8px;background:#fef3c7;margin-top:8px}#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);max-width:90vw;background:#1e293b;color:white;border-radius:12px;padding:12px 20px;display:none;z-index:5}.formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}@media(max-width:600px){main{padding:10px}.card{padding:12px}.day{min-height:79px;padding:4px;font-size:12px}.name{font-size:10px}h1{font-size:18px}}</style></head><body>
+<header><h1>🗓️ 團隊休假與智慧排班</h1><div class="row"><span id="who"></span><button id="logout" class="secondary hidden">登出</button></div></header><main>
+<section id="setup" class="card"><h2>首次連線設定</h2><p>請先依 README 完成 Supabase 資料庫設定，再填入專案網址與 Publishable / anon key。兩者是公開用戶端設定，請勿填入 service_role key。</p><div class="formgrid"><label>Supabase URL<input id="url" placeholder="https://xxx.supabase.co"></label><label>Publishable / anon key<input id="key" placeholder="sb_publishable_... 或 eyJ..."></label></div><p><button id="connect">儲存並連線</button></p></section>
+<section id="auth" class="card hidden"><h2>登入 / 註冊</h2><div class="formgrid"><label>姓名（註冊時使用）<input id="displayName" placeholder="例如：陳小明"></label><label>Email<input id="email" type="email"></label><label>密碼（至少 6 字元）<input id="password" type="password"></label></div><p class="row"><button id="signin">Email 登入</button><button id="signup" class="secondary">建立帳號</button><button id="google">使用 Google 登入</button></p><p class="small">新帳號須經管理員啟用。Email 註冊如啟用信件驗證，請先確認信箱。</p></section>
+<section id="waiting" class="card hidden"><h2>帳號待管理員啟用</h2><p>已登入，但目前尚無團隊存取權限。請聯絡管理員，將帳號設為組員。</p></section>
+<div id="workspace" class="hidden"><nav><button data-tab="calendar" class="active">休假月曆</button><button data-tab="requests">我的申請</button><button data-tab="roster">班表</button><button data-tab="manage" class="admin hidden">管理員後台</button><button data-tab="preschedule" class="editor hidden">預排班管理</button></nav>
+<section data-panel="calendar" class="card"><div class="row spread"><h2>團隊休假月曆</h2><div class="row"><input type="month" id="month"><button id="reload" class="secondary">重新整理</button></div></div><p class="small">點選日期預約 SS、VV、OF、WW、FF、公假，或預約 ZC、85。黃色＝待審核、綠色＝已核准。</p><div class="grid" id="cal"></div><div class="row" style="margin-top:15px"><label>申請日期<input type="date" id="leaveDate"></label><label>預約類型<select id="requestCode"><option>SS</option><option>VV</option><option>OF</option><option>WW</option><option>FF</option><option>公假</option><option>ZC</option><option value="85">85（排班顯示 BP）</option></select></label><label>備註（勿填寫敏感個資）<input id="leaveNote" maxlength="100" placeholder="可留空"></label><button id="requestLeave">送出休假預約</button></div></section>
+<section data-panel="requests" class="card hidden"><h2>我的休假申請</h2><div class="scroll"><table><thead><tr><th>日期</th><th>預約</th><th>狀態</th><th>備註</th><th>操作</th></tr></thead><tbody id="myRequests"></tbody></table></div></section>
+<section data-panel="roster" class="card hidden"><div class="row spread"><h2>每月班表</h2><button id="exportCsv" class="secondary">匯出 CSV</button></div><p id="rosterStatus" class="small">班表狀態讀取中</p><div class="scroll" id="rosterTable"></div><p id="warnings" class="notice hidden"></p></section>
+<section data-panel="manage" class="hidden"><div class="card"><h2>成員權限</h2><div class="scroll"><table><thead><tr><th>姓名</th><th>目前身分</th><th>設定</th><th>組長／預排權限</th><th>指定不排 L</th></tr></thead><tbody id="members"></tbody></table></div></div>
+<div class="card"><h2>預約與排班規則</h2><div class="formgrid"><label>每日核准休假上限<input id="maxDay" type="number" min="0" max="10"></label><label>每人每月預約上限<input id="maxMonth" type="number" min="0" max="31"></label><label>每月開放日（1–28）<input id="openDay" type="number" min="1" max="28"></label><label>提前開放幾個月<input id="ahead" type="number" min="0" max="12"></label><label>每人每月應休天數（含週末及核准休假，不含 BP）<input id="requiredRest" type="number" min="0" max="31"></label><label>最多連續上班天數<input id="consecutive" type="number" min="1" max="31"></label><label>最短休息時數<input id="rest" type="number" min="0" max="24"></label></div><p><button id="saveSettings">儲存規則</button></p><p class="small">每日核准額度由資料庫端強制檢查；連續工作天數及休息時數目前由自動排班引擎檢查並提示，人工修改須自行確認；BP 可由核准 85 預約，或平日兩人實際休假時自動安排；BP 是工作班，不計入休假。</p></div>
+<div class="card"><h2>班別設定</h2><div class="scroll"><table><thead><tr><th>代碼</th><th>名稱</th><th>起始</th><th>結束</th><th>每日最少</th><th>啟用</th><th></th></tr></thead><tbody id="shifts"></tbody></table></div><h3>新增班別</h3><div class="formgrid"><label>代碼<input id="newCode" placeholder="A"></label><label>名稱<input id="newLabel" placeholder="白班"></label><label>開始時間<input id="newStart" type="time"></label><label>結束時間<input id="newEnd" type="time"></label><label>每日最低人數<input id="newMin" type="number" min="0" max="10" value="1"></label></div><p><button id="addShift">新增</button></p><p class="small">OFF 為保留休假班別，不可停用；跨午夜班別會自動計算到隔天。</p></div>
+<div class="card"><h2>休假審核</h2><div class="scroll"><table><thead><tr><th>日期</th><th>姓名</th><th>預約</th><th>備註</th><th>操作</th></tr></thead><tbody id="review"></tbody></table></div></div>
+<div class="card"><h2>自動產生班表 / 人工修改</h2><p class="small">五人排班：週末一人 ZC，其餘 OFF；平日若僅一人休假，其他四人必須分別擔任 ZC、B、P、L；若兩人實際休假，另外三人必須分別排 ZC、BP、L；若核准 85 則優先保留該名 BP。指定不排 L 的成員不得排 L，其他班別輪流公平分配。已核准預約為優先硬限制；缺少應休時先安排 OFF，恰有兩人實際休假才需要配套 BP，優先避免連六，並盡量連續同一班別與平衡各班負擔。此為啟發式排班，若沒有可行人選將保留空缺並警示，不保證最佳解。</p><div class="row"><button id="generate">產生當月建議班表</button><button id="saveGenerated" class="secondary" disabled>儲存建議班表</button></div><div id="draft" class="scroll"></div><hr><div class="formgrid"><label>組員<select id="editUser"></select></label><label>日期<input id="editDay" type="date"></label><label>班別<select id="editShift"></select></label></div><p><button id="manualSave">手動修改並儲存</button></p></div></section><section data-panel="preschedule" class="card hidden"><h2>預排班表開放與編修</h2><p class="small">管理員與授予組長權限者可開放或關閉預排班、執行自動排班及人工修改。正式發布僅管理員可操作；發布後組長不可再更改。</p><div class="row"><strong id="monthState">狀態：未開放草稿</strong><button id="openPreview">開放預排班表</button><button id="closePreview" class="secondary">關閉預排班表</button><button id="publishRoster" class="admin hidden">正式發布班表</button></div><hr><div class="row"><button id="generateEditor">產生當月建議班表</button><button id="saveEditor" class="secondary" disabled>儲存建議班表</button></div><div id="draftEditor" class="scroll"></div><h3>人工修改</h3><div class="formgrid"><label>組員<select id="editUserEditor"></select></label><label>日期<input id="editDayEditor" type="date"></label><label>班別<select id="editShiftEditor"></select></label></div><p><button id="manualEditor">儲存人工修改</button></p></section></div></main><div id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script><script>
+'use strict';let db=null,user=null,me=null,profiles=[],leaves=[],shifts=[],roster=[],settings={},suggested=[],currentMonth='',refreshTimer,monthStatus='draft';
+const $=id=>document.getElementById(id),q=(s)=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function msg(t){$('toast').textContent=t;$('toast').style.display='block';clearTimeout(window.__msgTimer);window.__msgTimer=setTimeout(()=>$('toast').style.display='none',4500)};
+function dateStr(y,m,d){return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`};const today=()=>{const d=new Date();return dateStr(d.getFullYear(),d.getMonth()+1,d.getDate())};
+function monthInfo(){let [y,m]=currentMonth.split('-').map(Number);return {y,m,last:new Date(y,m,0).getDate(),first:new Date(y,m-1,1).getDay(),start:`${currentMonth}-01`,end:dateStr(y,m,new Date(y,m,0).getDate())}}
+async function checked(p){const {data,error}=await p;if(error)throw error;return data}async function doTask(fn){try{await fn()}catch(e){console.error(e);msg(e.message||'操作失敗')}}
+function show(id,on){$(id).classList.toggle('hidden',!on)}function initialize(){const url=localStorage.getItem('rt_url'),key=localStorage.getItem('rt_key');if(!url||!key){show('setup',true);return}show('setup',false);db=supabase.createClient(url,key);db.auth.onAuthStateChange(()=>setTimeout(()=>doTask(loadSession),0));doTask(loadSession)}
+async function loadSession(){const {data:{session}}=await db.auth.getSession();user=session?.user||null;show('logout',!!user);show('auth',!user);show('workspace',false);show('waiting',false);$('who').textContent=user?.email||'';if(!user){me=null;return}const p=await checked(db.from('profiles').select('*').eq('id',user.id).single());me=p;if(!['member','admin'].includes(me.role)){show('waiting',true);return}show('workspace',true);qAll('.admin').forEach(e=>e.classList.toggle('hidden',me.role!=='admin'));qAll('.editor').forEach(e=>e.classList.toggle('hidden',!(me.role==='admin'||me.is_leader)));await refresh()}
+const qAll=s=>document.querySelectorAll(s);
+async function refresh(){let info=monthInfo();const [p,l,s,r,config]=await Promise.all([
+ checked(db.from('profiles').select('id,display_name,role,is_leader,no_l').order('display_name')),
+ checked(db.from('leave_requests').select('*').gte('day',info.start).lte('day',info.end).order('day')),
+ checked(db.from('shifts').select('*').order('id')),
+ checked(db.from('roster').select('*').gte('day',info.start).lte('day',info.end)),
+ checked(db.from('settings').select('*').eq('id',1).single())]);profiles=p;leaves=l;shifts=s;roster=r;settings=config;const state=await checked(db.from('roster_months').select('status').eq('month',currentMonth+'-01').maybeSingle());monthStatus=state?.status||'draft';renderAll()}
+function display(uid){return profiles.find(x=>x.id===uid)?.display_name||'組員'}
+function renderAll(){renderCalendar();renderMy();renderRoster();if(me.role==='admin'){renderMembers();renderSettings();renderShifts();renderReview();renderEditors()}if(me.role==='admin'||me.is_leader)renderPreviewControls()}
+function renderCalendar(){const {last,first,y,m}=monthInfo(),arr=['日','一','二','三','四','五','六'].map(x=>`<div style="text-align:center;font-weight:bold">${x}</div>`);for(let i=0;i<first;i++)arr.push('<div></div>');for(let d=1;d<=last;d++){let day=dateStr(y,m,d),ls=leaves.filter(x=>x.day===day&&x.status!=='rejected');arr.push(`<div class="day ${day===today()?'today':''} ${ls.some(x=>x.status==='approved')?'off':''}" data-date="${day}"><b>${d}</b><div class="small">${ls.length} 人預約</div>${ls.map(x=>`<span class="name ${x.status}">${esc(display(x.user_id))} ${esc(x.request_code||'OF')} ${x.status==='approved'?'✓':'待審'}</span>`).join('')}</div>`)}$('cal').innerHTML=arr.join('');qAll('[data-date]').forEach(el=>el.onclick=()=>$('leaveDate').value=el.dataset.date)}
+function renderMy(){let html=leaves.filter(x=>x.user_id===user.id).map(x=>`<tr><td>${x.day}</td><td>${esc(x.request_code||'OF')}</td><td>${{pending:'待審核',approved:'已核准',rejected:'已駁回'}[x.status]}</td><td>${esc(x.note)}</td><td>${x.status==='pending'?`<button class="danger" data-cancel="${x.id}">取消</button>`:'—'}</td></tr>`).join('');$('myRequests').innerHTML=html||'<tr><td colspan="5">本月尚無申請</td></tr>';qAll('[data-cancel]').forEach(b=>b.onclick=()=>doTask(async()=>{await checked(db.rpc('cancel_my_leave',{p_id:Number(b.dataset.cancel)}));msg('已取消');await refresh()}))}
+function renderRoster(){ $('rosterStatus').textContent=monthStatus==='published'?'正式發布班表':monthStatus==='open'?'預排班表（尚未正式發布）':'尚未開放預排班表';let days=monthInfo().last,dates=Array.from({length:days},(_,i)=>`${currentMonth}-${String(i+1).padStart(2,'0')}`),users=profiles.filter(x=>x.role!=='pending');const head=`<tr><th>姓名</th>${dates.map(d=>`<th>${Number(d.slice(-2))}</th>`).join('')}</tr>`;const body=users.map(p=>`<tr><td>${esc(p.display_name)}</td>${dates.map(day=>{const item=roster.find(x=>x.user_id===p.id&&x.day===day),sh=shifts.find(s=>s.id===item?.shift_id);return `<td style="background:${sh?esc(sh.color)+'18':''}">${esc(sh?.code||'·')}</td>`}).join('')}</tr>`).join('');$('rosterTable').innerHTML=`<table>${head}${body}</table>`;const warns=roster.length?validate(roster):[];$('warnings').textContent=warns.join('；');$('warnings').classList.toggle('hidden',!warns.length)}
+function renderMembers(){$('members').innerHTML=profiles.map(p=>`<tr><td>${esc(p.display_name)}</td><td>${esc(p.role)}</td><td><select data-role="${p.id}"><option value="pending" ${p.role==='pending'?'selected':''}>待啟用</option><option value="member" ${p.role==='member'?'selected':''}>組員</option><option value="admin" ${p.role==='admin'?'selected':''}>管理員</option></select></td><td><input type="checkbox" data-leader="${p.id}" ${p.is_leader?'checked':''} aria-label="組長預排權限"></td><td><input type="checkbox" data-nol="${p.id}" ${p.no_l?'checked':''} aria-label="禁止排 L"></td></tr>`).join('');qAll('[data-leader]').forEach(c=>c.onchange=()=>doTask(async()=>{await checked(db.from('profiles').update({is_leader:c.checked}).eq('id',c.dataset.leader));await refresh();msg('組長／預排權限已更新')}));qAll('[data-nol]').forEach(c=>c.onchange=()=>doTask(async()=>{await checked(db.from('profiles').update({no_l:c.checked}).eq('id',c.dataset.nol));await refresh();msg('不排 L 名單已更新')}));qAll('[data-role]').forEach(s=>s.onchange=()=>doTask(async()=>{if(s.dataset.role===user.id&&s.value!=='admin'&&!confirm('確定解除自己的管理權限？')){renderMembers();return}await checked(db.from('profiles').update({role:s.value}).eq('id',s.dataset.role));await refresh();msg('權限已更新')}))}
+function renderSettings(){for(const [id,key] of [['maxDay','max_leave_per_day'],['maxMonth','max_leave_per_month'],['openDay','booking_open_day'],['ahead','booking_months_ahead'],['requiredRest','required_rest_days'],['consecutive','max_consecutive_days'],['rest','min_rest_hours']])$(id).value=settings[key]}
+function renderShifts(){$('shifts').innerHTML=shifts.map(s=>`<tr><td>${esc(s.code)}</td><td>${esc(s.label)}</td><td>${s.start_time?.slice(0,5)||'—'}</td><td>${s.end_time?.slice(0,5)||'—'}</td><td><input aria-label="最低人力" data-min="${s.id}" type="number" min="0" max="10" style="width:65px" value="${s.min_staff}"></td><td>${s.code==='OFF'?'固定':`<input type="checkbox" data-shiftactive="${s.id}" ${s.active?'checked':''}>`}</td><td><button class="secondary" data-shiftsave="${s.id}">儲存</button></td></tr>`).join('');qAll('[data-shiftsave]').forEach(b=>b.onclick=()=>doTask(async()=>{let id=Number(b.dataset.shiftsave),s=shifts.find(x=>x.id===id),min=Number(q(`[data-min="${id}"]`).value);await checked(db.from('shifts').update({min_staff:min,active:s.code==='OFF'?true:q(`[data-shiftactive="${id}"]`).checked}).eq('id',id));await refresh();msg('班別已更新')}))}
+function renderReview(){$('review').innerHTML=leaves.filter(x=>x.status==='pending').map(x=>`<tr><td>${x.day}</td><td>${esc(display(x.user_id))}</td><td>${esc(x.request_code||'OF')}</td><td>${esc(x.note)}</td><td><button data-review="${x.id}" data-approve="true">核准</button> <button class="danger" data-review="${x.id}" data-approve="false">駁回</button></td></tr>`).join('')||'<tr><td colspan="5">本月沒有待審核申請</td></tr>';qAll('[data-review]').forEach(b=>b.onclick=()=>doTask(async()=>{await checked(db.rpc('review_leave',{p_id:Number(b.dataset.review),p_approve:b.dataset.approve==='true'}));msg('審核完成');await refresh()}))}
+function renderEditors(){$('editUser').innerHTML=profiles.filter(p=>p.role!=='pending').map(p=>`<option value="${p.id}">${esc(p.display_name)}</option>`).join('');$('editShift').innerHTML=shifts.filter(s=>s.active).map(s=>`<option value="${s.id}">${esc(s.label)} (${esc(s.code)})</option>`).join('')}
+function renderPreviewControls(){
+ $('monthState').textContent='目前狀態：'+({draft:'未開放草稿',open:'預排已開放',published:'正式發布'}[monthStatus]||monthStatus);
+ $('openPreview').disabled=monthStatus!=='draft';$('closePreview').disabled=monthStatus!=='open';$('publishRoster').disabled=monthStatus==='published';
+ $('generateEditor').disabled=monthStatus==='published';$('manualEditor').disabled=monthStatus==='published';
+ $('editUserEditor').innerHTML=profiles.filter(p=>p.role!=='pending').map(p=>`<option value="${p.id}">${esc(p.display_name)}</option>`).join('');
+ $('editShiftEditor').innerHTML=shifts.filter(s=>s.active).map(s=>`<option value="${s.id}">${esc(s.label)} (${esc(s.code)})</option>`).join('');
+ $('editDayEditor').value||=currentMonth+'-01';
+}
+function shiftDuration(s){if(!s.start_time)return null;let a=s.start_time.slice(0,5).split(':').map(Number),b=s.end_time.slice(0,5).split(':').map(Number),start=a[0]*60+a[1],end=b[0]*60+b[1];return {start,end:end<=start?end+1440:end}}
+function restOk(previous,shift,day){if(!previous||previous.code==='OFF'||shift.code==='OFF')return true;let a=shiftDuration(previous),b=shiftDuration(shift);if(!a||!b)return true;return (1440+b.start-a.end)/60>=settings.min_rest_hours}
+const LEAVE_CODES=new Set(['SS','VV','OF','WW','FF','公假']);
+const AWAY_CODES=new Set(['OFF',...LEAVE_CODES]);
+const isAway=code=>AWAY_CODES.has(code);
+const shiftByCode=code=>shifts.find(s=>s.code===code&&s.active);
+const codeOf=item=>shifts.find(s=>s.id===item?.shift_id)?.code||'';
+const weekend=day=>[0,6].includes(new Date(day+'T12:00:00').getDay());
+function validate(items){
+ const warnings=[],{last,y,m}=monthInfo(),members=profiles.filter(p=>p.role!=='pending');
+ for(let d=1;d<=last;d++){
+  const day=dateStr(y,m,d),rows=items.filter(x=>x.day===day),codes=rows.map(codeOf),wk=weekend(day),zc=codes.filter(c=>c==='ZC').length,bp=codes.filter(c=>c==='BP').length;
+  if(rows.length!==members.length)warnings.push(`${day} 有 ${members.length-rows.length} 位未排班`);
+  if(wk){if(zc!==1)warnings.push(`${day} 週末必須恰好 1 位 ZC`);if(codes.some(c=>!isAway(c)&&c!=='ZC'))warnings.push(`${day} 週末不得排非 ZC 工作班`)}
+  else{const away=codes.filter(isAway).length;
+   if(bp>1)warnings.push(`${day} BP 超過 1 位`);
+   if(away+bp<1||away+bp>2)warnings.push(`${day} 平日休假/BP 名額應介於 1–2 人，實際 ${away+bp}`);
+   if(away===1&&bp===0){for(const c of ['ZC','B','P','L'])if(codes.filter(x=>x===c).length!==1)warnings.push(`${day} 一人休假須 ZC/B/P/L 各一人（${c} 不符）`);}
+   if(away===2){for(const c of ['ZC','BP','L'])if(codes.filter(x=>x===c).length!==1)warnings.push(`${day} 兩人休假須 ZC/BP/L 各一人（${c} 不符）`);}
+   if(away===1&&bp===1){if(codes.filter(c=>c==='ZC').length!==1)warnings.push(`${day} 休假及預約85並存，應有一位 ZC`);}
+   if(away===0)warnings.push(`${day} 平日至少一位實際休假`);
+   if(codes.some(c=>!isAway(c)&&!['BP','B','P','L','ZC'].includes(c)))warnings.push(`${day} 有未定義的工作班`);
+  }
+  for(const member of members){const row=rows.find(r=>r.user_id===member.id),c=codeOf(row),approved=leaves.find(l=>l.day===day&&l.user_id===member.id&&l.status==='approved');
+   if(member.no_l&&c==='L')warnings.push(`${day} 指定者 ${member.display_name} 不得排 L`);
+   if(c==='BP' && approved?.request_code!=='85' && (!(!wk&&codes.filter(isAway).length===2)))warnings.push(`${day} ${member.display_name} 的 BP 須來自核准85或平日兩人休假`);
+   if(approved && c!==(approved.request_code==='85'?'BP':approved.request_code))warnings.push(`${day} ${member.display_name} 未遵守核准預約 ${approved.request_code}`);
+  }
+ }
+ for(const member of members){let streak=0,previous=null,restDays=0;
+  for(let d=1;d<=last;d++){const day=dateStr(y,m,d),row=items.find(r=>r.day===day&&r.user_id===member.id),sh=shifts.find(s=>s.id===row?.shift_id);
+   if(sh&&!isAway(sh.code)){streak++;if(streak>Math.min(Number(settings.max_consecutive_days||5),5))warnings.push(`${member.display_name} ${day} 連續上班超限`);if(previous&&!isAway(previous.code)&&!restOk(previous,sh,day))warnings.push(`${member.display_name} ${day} 休息時數不足`)}else {streak=0;if(sh&&isAway(sh.code))restDays++}previous=sh;
+  }
+  if(restDays<(settings.required_rest_days??8))warnings.push(`${member.display_name} 本月休息 ${restDays} 天，未達應休 ${settings.required_rest_days??8} 天`);
+ }
+ return warnings;
+}
+function generate(){
+ const {last,y,m}=monthInfo(),members=profiles.filter(x=>x.role!=='pending'),byCode=c=>{const s=shiftByCode(c);if(!s)throw Error('缺少啟用班別 '+c+'；請先完成資料庫升級');return s.id};
+ if(members.length!==5)throw Error(`五人排班模式需 5 名啟用組員，目前 ${members.length} 人`);
+ ['OFF','BP','B','P','L','ZC',...LEAVE_CODES].forEach(byCode);
+ const dates=Array.from({length:last},(_,i)=>dateStr(y,m,i+1));
+ const required=Number(settings.required_rest_days??8),maxStreak=Math.min(Number(settings.max_consecutive_days||5),5);
+ const fixedMap=new Map(),offDays={};
+ members.forEach(u=>offDays[u.id]=0);
+ for(const l of leaves.filter(l=>l.status==='approved')){
+  fixedMap.set(l.user_id+'|'+l.day,l.request_code==='85'?'BP':l.request_code);
+ }
+ const warnings=[],items=[],stats={};
+ members.forEach(u=>stats[u.id]={count:{},work:0,rest:0,streak:0,prev:'',zc:0});
+ function add(u,day,c){items.push({user_id:u.id,day,shift_id:byCode(c)});const s=stats[u.id];s.count[c]=(s.count[c]||0)+1;
+  if(isAway(c)){s.rest++;s.streak=0}else{s.work++;s.streak++;if(c==='ZC')s.zc++}s.prev=c;}
+ const fixedFor=(u,day)=>fixedMap.get(u.id+'|'+day);
+ // Forecast unavoidable leave days and weekend rests, so the OFF allocator can avoid starving other members.
+ function futureGuaranteed(u,d){let n=0;for(let j=d+1;j<=last;j++){
+  const date=dateStr(y,m,j),f=fixedFor(u,date);if(f&&isAway(f))n++;else if(weekend(date)&&!f)n++;}return n;
+ }
+ function offScore(u,d){const s=stats[u.id],possible=s.rest+futureGuaranteed(u,d),gap=Math.max(0,required-possible);
+  return gap*80+(s.streak>=maxStreak?1000:s.streak===maxStreak-1?140:0)+s.streak*3-s.rest*2;}
+ function workScore(u,c){const s=stats[u.id],previous=s.prev;
+  const consecutivePenalty=s.streak>=maxStreak?10000:s.streak===maxStreak-1?45:0;
+  const restPenalty=previous&&!isAway(previous)&&!restOk(shiftByCode(previous),shiftByCode(c))?200:0;
+  return (s.count[c]||0)*3+s.work*.9+consecutivePenalty+restPenalty-(previous===c?7:0)+(c==='ZC'?s.zc*3:0);
+ }
+ for(let d=1;d<=last;d++){
+  const day=dateStr(y,m,d),wk=weekend(day),assigned=new Map();
+  function put(u,c){if(!u)return false;add(u,day,c);assigned.set(u.id,c);return true;}
+  for(const u of members){const f=fixedFor(u,day);if(f){if(wk&&!isAway(f)&&f!=='ZC')warnings.push(`${day} ${u.display_name} 的預約 ${f} 不適用週末`);put(u,f)}}
+  const left=()=>members.filter(u=>!assigned.has(u.id));
+  if(wk){
+   const zc=[...assigned.values()].filter(c=>c==='ZC').length;
+   if(zc>1)warnings.push(`${day} 已核准 ZC 超過 1 位`);
+   if(zc===0){const candidates=left().sort((a,b)=>workScore(a,'ZC')-workScore(b,'ZC'));if(candidates[0])put(candidates[0],'ZC');else warnings.push(`${day} 無法安排週末 ZC`)}
+   left().forEach(u=>put(u,'OFF'));
+  }else{
+   const countAway=()=>[...assigned.values()].filter(isAway).length;
+   const fixedBP=[...assigned.values()].filter(c=>c==='BP').length;
+   if(countAway()>2)warnings.push(`${day} 已核准休假超過 2 人`);
+   if(fixedBP>1)warnings.push(`${day} 預約85/BP 超過 1 位`);
+   // Guarantee at least one real rest day. An approved 85 (BP) is a working shift.
+   while(countAway()<1&&left().length){const u=left().sort((a,b)=>offScore(b,d)-offScore(a,d))[0];put(u,'OFF')}
+   // Optional second OFF: only when it materially helps the statutory rest quota or avoids six consecutive work days.
+   if(!fixedBP&&countAway()===1&&left().length){
+    const ranked=left().map(u=>({u,score:offScore(u,d)})).sort((a,b)=>b.score-a.score);
+    const maxGap=ranked[0]?.score||0;
+    if(maxGap>=75)put(ranked[0].u,'OFF');
+   }
+   // Exactly two actual leaves => ZC, BP, L. One leave => ZC, B, P, L.
+   // An approved 85 is a fixed BP, so fill remaining slots with ZC/B/P/L rotation.
+   const away=countAway();
+   const existing=[...assigned.values()].filter(c=>!isAway(c));
+   let needed=away===2?['ZC','BP','L']:(fixedBP?['ZC','BP','B','L']:['ZC','B','P','L']);
+   if(existing.some(c=>!needed.includes(c)))warnings.push(`${day} 核准的值班預約與每日所需班別衝突`);
+   let missing=needed.filter(c=>!existing.includes(c));
+   if(missing.length!==left().length)warnings.push(`${day} 無法符合休假人數與必要班別配置`);
+   // Choose the lowest-cost globally valid daily matching, not greedy one-slot assignments.
+   let best=null;
+   function search(remaining,choices,pairs,total){
+    if(!remaining.length){if(!best||total<best.total)best={pairs:[...pairs],total};return;}
+    const u=remaining[0];
+    for(let j=0;j<choices.length;j++){
+     const c=choices[j];if(u.no_l&&c==='L')continue;
+     const score=workScore(u,c)+(c==='ZC'?4:0);
+     search(remaining.slice(1),choices.filter((_,k)=>k!==j),[...pairs,{u,c}],total+score);
+    }
+   }
+   if(missing.length===left().length)search(left(),missing,[],0);
+   if(best){for(const {u,c} of best.pairs)put(u,c)}
+   else warnings.push(`${day} 無法找到符合指定人員不排 L 及已核准預約的排班組合`);
+
+  }
+ }
+ suggested=items;
+ const perPerson=members.map(u=>`${u.display_name}${u.no_l?'（不排 L）':''}：休 ${stats[u.id].rest}／應休 ${required} 天；ZC ${stats[u.id].zc} 天`).join('　｜　');
+ const issues=[...warnings,...validate(items)];
+ $('draft').innerHTML=`<p>產生 ${items.length} 格（5 人 × ${last} 天）。${issues.length?`<b style="color:#b91c1c">共 ${issues.length} 項警示</b>`:'目前沒有發現規則違反。'}</p><div class="notice">${issues.length?esc(issues.slice(0,25).join('；')):'系統補休採 OFF；當平日兩人實際休假時安排 ZC/BP/L。其他班別公平輪流，優先避免連六。'}</div><p class="small">${esc(perPerson)}</p><p class="small">OFF 為系統安排休假；兩人休假產生的 BP 是上班，不算休假。已核准的 SS/VV/OF/WW/FF/公假均保留原代碼；BP 不列入休息天數。連續天數先依當月計算，跨月需人工確認。若全月規則無可行解，系統會警示並停用整批儲存。</p>`;
+ const header='<tr><th>姓名</th>'+dates.map(x=>'<th>'+Number(x.slice(-2))+'</th>').join('')+'</tr>';
+ const body=members.map(u=>'<tr><td>'+esc(u.display_name)+(u.no_l?' ★':'')+'</td>'+dates.map(day=>{
+  const item=items.find(v=>v.user_id===u.id&&v.day===day),code=codeOf(item);
+  return '<td style="background:'+(isAway(code)?'#fef2f2':code==='BP'?'#fce7f3':'#eef2ff')+'">'+esc(code)+'</td>'
+ }).join('')+'</tr>').join('');
+ $('draft').innerHTML+='<div class="scroll"><table>'+header+body+'</table></div>';
+ $('saveGenerated').disabled=issues.length>0;
+}
+$('connect').onclick=()=>{let url=$('url').value.trim(),key=$('key').value.trim();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url)||key.length<15)return msg('請填寫有效的專案 URL 和公開金鑰');localStorage.setItem('rt_url',url);localStorage.setItem('rt_key',key);location.reload()};
+$('signin').onclick=()=>doTask(async()=>{await checked(db.auth.signInWithPassword({email:$('email').value,password:$('password').value}));await loadSession()});
+$('signup').onclick=()=>doTask(async()=>{await checked(db.auth.signUp({email:$('email').value,password:$('password').value,options:{data:{display_name:$('displayName').value.trim()||$('email').value.split('@')[0]}}}));msg('註冊已送出；可能需要先驗證 Email，並等待管理員啟用')});
+$('google').onclick=()=>doTask(async()=>{await checked(db.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname}}))});
+$('logout').onclick=()=>doTask(async()=>{await checked(db.auth.signOut());location.reload()});
+$('month').onchange=()=>{currentMonth=$('month').value;doTask(refresh)};$('reload').onclick=()=>doTask(refresh);
+$('requestLeave').onclick=()=>doTask(async()=>{if(!$('leaveDate').value)throw Error('先選擇日期');await checked(db.from('leave_requests').insert({user_id:user.id,day:$('leaveDate').value,request_code:$('requestCode').value,note:$('leaveNote').value.trim()}));$('leaveNote').value='';await refresh();msg('預約送出，等待管理員核准')});
+qAll('[data-tab]').forEach(b=>b.onclick=()=>{qAll('[data-tab]').forEach(t=>t.classList.toggle('active',t===b));qAll('[data-panel]').forEach(x=>x.classList.toggle('hidden',x.dataset.panel!==b.dataset.tab))});
+$('saveSettings').onclick=()=>doTask(async()=>{let obj={max_leave_per_day:Number($('maxDay').value),max_leave_per_month:Number($('maxMonth').value),booking_open_day:Number($('openDay').value),booking_months_ahead:Number($('ahead').value),required_rest_days:Number($('requiredRest').value),max_consecutive_days:Number($('consecutive').value),min_rest_hours:Number($('rest').value),updated_at:new Date().toISOString()};await checked(db.from('settings').update(obj).eq('id',1));await refresh();msg('規則已儲存')});
+$('addShift').onclick=()=>doTask(async()=>{let start=$('newStart').value||null,end=$('newEnd').value||null;if(!!start!==!!end)throw Error('開始與結束時間需同時填寫');await checked(db.from('shifts').insert({code:$('newCode').value.trim().toUpperCase(),label:$('newLabel').value.trim(),start_time:start,end_time:end,min_staff:Number($('newMin').value)}));await refresh();msg('已新增班別')});
+$('generate').onclick=()=>doTask(async()=>{generate();msg('建議班表已產生，請先確認警示再儲存')});
+$('generateEditor').onclick=()=>doTask(async()=>{generate();$('draftEditor').innerHTML=$('draft').innerHTML;$('saveEditor').disabled=$('saveGenerated').disabled;msg('預排建議已產生，請確認警示')});
+$('saveGenerated').onclick=()=>doTask(async()=>{if(!suggested.length)return;if(!confirm(`將覆寫 ${currentMonth} 的 ${suggested.length} 格班表，確定？`))return;let done=0;for(const x of suggested){await checked(db.rpc('save_roster',{p_user:x.user_id,p_day:x.day,p_shift:x.shift_id}));done++}await refresh();msg(`已儲存 ${done} 格建議班表`)});
+$('manualSave').onclick=()=>doTask(async()=>{await checked(db.rpc('save_roster',{p_user:$('editUser').value,p_day:$('editDay').value,p_shift:Number($('editShift').value)}));await refresh();msg('人工修改已儲存')});
+$('saveEditor').onclick=()=>doTask(async()=>{if(monthStatus==='published')throw Error('正式發布後不可由組長修改');if(!suggested.length)return;if(!confirm('確定將預排結果儲存？'))return;for(const x of suggested)await checked(db.rpc('save_roster',{p_user:x.user_id,p_day:x.day,p_shift:x.shift_id}));await refresh();msg('預排班表已儲存')});
+$('manualEditor').onclick=()=>doTask(async()=>{await checked(db.rpc('save_roster',{p_user:$('editUserEditor').value,p_day:$('editDayEditor').value,p_shift:Number($('editShiftEditor').value)}));await refresh();msg('預排人工修改已儲存')});
+async function setMonthStatus(status){await checked(db.rpc('set_roster_month_status',{p_month:currentMonth+'-01',p_status:status}));await refresh();msg('班表狀態已更新')}
+$('openPreview').onclick=()=>doTask(()=>setMonthStatus('open'));
+$('closePreview').onclick=()=>doTask(()=>setMonthStatus('draft'));
+$('publishRoster').onclick=()=>doTask(async()=>{if(!confirm('確定正式發布此月份班表？'))return;await setMonthStatus('published')});
+$('exportCsv').onclick=()=>{let data=[['姓名','日期','班別']];for(let r of roster)data.push([display(r.user_id),r.day,shifts.find(s=>s.id===r.shift_id)?.code||'']);let csv='\ufeff'+data.map(row=>row.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\r\n');let a=document.createElement('a'),u=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.href=u;a.download=`班表_${currentMonth}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(u),300)};
+currentMonth=today().slice(0,7);$('month').value=currentMonth;$('leaveDate').value=today();$('editDay').value=today();$('url').value=localStorage.getItem('rt_url')||'';$('key').value=localStorage.getItem('rt_key')||'';initialize();
+</script></body></html>
