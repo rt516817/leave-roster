@@ -3,5 +3,5 @@
 // 絕對不要貼 service_role、sb_secret、Google Client Secret、資料庫密碼。
 window.RT_ROSTER_CONFIG = {
   supabaseUrl: 'https://boffnsfoxjtzyfcitwst.supabase.co',
-  supabasePublishableKey: '請填入Supabase的完整PublishableKey'
+  supabasePublishableKey: 'sb_publishable_g584rK8I1aanj_q1O9Jvfg_pGMW6yLC'
 };
